@@ -29,12 +29,17 @@
     ```bash
     pip install -r requirements.txt
     ```
-3.  Create a `.env` file and add your credentials:
+3.  Create a PostgreSQL database:
+    * Open **pgAdmin4** (or any SQL client).
+    * Create a new database named `trip_splitter_db`.
+    * (The tables will be created automatically when you run the bot).
+    ```
+4.  Create a `.env` file and add your credentials:
     ```env
     BOT_TOKEN=your_telegram_bot_token
     DB_PASS=your_database_password
     ```
-4.  Run the bot:
+5.  Run the bot:
     ```bash
     python bot.py
     ```
