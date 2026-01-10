@@ -1,0 +1,5 @@
+aiogram
+sqlalchemy
+asyncpg
+yfinance
+python-dotenv
