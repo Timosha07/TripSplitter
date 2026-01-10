@@ -33,7 +33,7 @@
     * Open **pgAdmin4** (or any SQL client).
     * Create a new database named `trip_splitter_db`.
     * (The tables will be created automatically when you run the bot).
-    ```
+    
 4.  Create a `.env` file and add your credentials:
     ```env
     BOT_TOKEN=your_telegram_bot_token
