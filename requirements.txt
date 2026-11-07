@@ -1,5 +1,4 @@
-aiogram
-sqlalchemy
-asyncpg
-yfinance
-python-dotenv
+aiogram==3.29.0
+asyncpg==0.32.0
+yfinance==1.8.0
+python-dotenv==1.2.4

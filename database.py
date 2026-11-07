@@ -1,72 +1,35 @@
-# database.py
-from sqlalchemy.ext.asyncio import create_async_engine
-from sqlalchemy import text
-from config import DB_URL
+"""Versioned PostgreSQL ledger; one row lock serializes each chat's writes."""
+import json
+from contextlib import asynccontextmanager
+import asyncpg
+from domain import empty
 
-engine = create_async_engine(DB_URL)
+class Store:
+    def __init__(self, url):
+        self.url = url
+        self.pool = None
 
-async def add_expense(group_id, payer, amount, desc, excluded=""):
-    async with engine.begin() as conn:
-        query = text("""
-            INSERT INTO expenses (group_id, payer_name, amount, description, excluded_users)
-            VALUES (:group_id, :name, :amount, :desc, :excl)
-        """)
-        await conn.execute(query, {
-            "group_id": group_id, "name": payer, 
-            "amount": amount, "desc": desc, "excl": excluded
-        })
+    async def open(self):
+        self.pool = await asyncpg.create_pool(self.url, min_size=1, max_size=5, command_timeout=15)
+        async with self.pool.acquire() as conn:
+            version = await conn.fetchval("SELECT version FROM ts_schema WHERE id = 1")
+            if version != 1:
+                raise RuntimeError("Unsupported schema: run python migrate.py")
 
-async def get_expenses(group_id):
-    async with engine.connect() as conn:
-        query = text("SELECT payer_name, amount, excluded_users FROM expenses WHERE group_id = :group_id")
-        result = await conn.execute(query, {"group_id": group_id})
-        return result.all()
+    async def close(self):
+        if self.pool:
+            await self.pool.close()
 
-async def clear_group_data(group_id):
-    async with engine.begin() as conn:
-        await conn.execute(text("DELETE FROM expenses WHERE group_id = :group_id"), {"group_id": group_id})
+    @asynccontextmanager
+    async def edit(self, chat_id):
+        async with self.pool.acquire() as conn, conn.transaction():
+            await conn.execute("INSERT INTO ts_ledgers (chat_id, data) VALUES ($1, $2::jsonb) ON CONFLICT DO NOTHING", chat_id, json.dumps(empty()))
+            raw = await conn.fetchval("SELECT data FROM ts_ledgers WHERE chat_id=$1 FOR UPDATE", chat_id)
+            state = json.loads(raw)
+            yield state
+            await conn.execute("UPDATE ts_ledgers SET data=$2::jsonb WHERE chat_id=$1", chat_id, json.dumps(state))
 
-# ... (твои старые импорты)
-
-# ... старые импорты ...
-
-async def set_language(group_id, lang_code):
-    async with engine.begin() as conn:
-        # Если настройки нет - создаем, если есть - обновляем (Upsert)
-        query = text("""
-            INSERT INTO group_settings (group_id, lang_code)
-            VALUES (:group_id, :lang)
-            ON CONFLICT (group_id) DO UPDATE SET lang_code = :lang
-        """)
-        await conn.execute(query, {"group_id": group_id, "lang": lang_code})
-
-async def get_language(group_id):
-    async with engine.connect() as conn:
-        query = text("SELECT lang_code FROM group_settings WHERE group_id = :group_id")
-        result = await conn.execute(query, {"group_id": group_id})
-        row = result.fetchone()
-        # Если в базе нет записи, по умолчанию возвращаем 'ru'
-        return row[0] if row else 'ru'
-
-async def add_participant(group_id, user_name):
-    async with engine.begin() as conn:
-        # ON CONFLICT DO NOTHING означает: если он уже есть, ошибку не выдаем, просто пропускаем
-        query = text("""
-            INSERT INTO participants (group_id, user_name)
-            VALUES (:group_id, :name)
-            ON CONFLICT (group_id, user_name) DO NOTHING
-        """)
-        await conn.execute(query, {"group_id": group_id, "name": user_name})
-
-async def get_participants(group_id):
-    async with engine.connect() as conn:
-        query = text("SELECT user_name FROM participants WHERE group_id = :group_id")
-        result = await conn.execute(query, {"group_id": group_id})
-        # Превращаем ответ базы в простой список строк ['Omaz', 'Ansar']
-        return [row[0] for row in result.all()]
-
-# --- ВАЖНО: Обнови функцию очистки, чтобы удалялись и участники тоже ---
-async def clear_group_data(group_id):
-    async with engine.begin() as conn:
-        await conn.execute(text("DELETE FROM expenses WHERE group_id = :group_id"), {"group_id": group_id})
-        await conn.execute(text("DELETE FROM participants WHERE group_id = :group_id"), {"group_id": group_id})
+    async def read(self, chat_id):
+        async with self.pool.acquire() as conn:
+            raw = await conn.fetchval("SELECT data FROM ts_ledgers WHERE chat_id=$1", chat_id)
+            return json.loads(raw) if raw else empty()

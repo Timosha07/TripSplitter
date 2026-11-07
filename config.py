@@ -1,12 +1,15 @@
 import os
 from dotenv import load_dotenv
-
-# Загружаем переменные из файла .env
 load_dotenv()
 
-# Достаем токен
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+def database_url():
+    url = os.getenv("DATABASE_URL", "")
+    if not url.startswith(("postgresql://", "postgres://")):
+        raise RuntimeError("Set DATABASE_URL to a PostgreSQL connection URL")
+    return url
 
-# Достаем пароль от базы и собираем ссылку
-DB_PASS = os.getenv("DB_PASS")
-DB_URL = f"postgresql+asyncpg://postgres:{DB_PASS}@localhost:5432/trip_splitter_db"
+def bot_token():
+    token = os.getenv("BOT_TOKEN", "")
+    if not token:
+        raise RuntimeError("Set BOT_TOKEN in .env")
+    return token
