@@ -2,3 +2,9 @@
 __pycache__/
 .vscode/
 venv/
+.venv/
+.pytest_cache/
+*.pyc
+.test-postgres/
+.test-postgres.log
+.local/

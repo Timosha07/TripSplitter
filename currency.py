@@ -1,32 +1,27 @@
+import asyncio
+from decimal import Decimal
+import time
 import yfinance as yf
 
-def get_exchange_rate(currency_code):
-    """
-    Получает курс валюты к KZT через Yahoo Finance.
-    Например: USD -> вернет 485.0
-    """
-    code = currency_code.upper().strip()
-    
-    # Если валюта уже тенге, курс 1 к 1
-    if code in ["KZT", "ТГ", "ТЕНГЕ"]:
-        return 1.0
-    
-    # Формируем тикер для Yahoo. 
-    # Обычно формат такой: "USDKZT=X", "EURKZT=X", "RUBKZT=X"
-    ticker_symbol = f"{code}KZT=X"
-    
-    try:
-        # Запрашиваем данные
-        ticker = yf.Ticker(ticker_symbol)
-        # Берем данные за последний 1 день
-        data = ticker.history(period="1d")
-        
-        if data.empty:
-            return None
-            
-        # Возвращаем цену закрытия (Close)
-        return float(data['Close'].iloc[-1])
-        
-    except Exception as e:
-        print(f"Ошибка получения курса для {code}: {e}")
-        return None
+_cache = {}
+_lock = asyncio.Lock()
+
+def _fetch(code):
+    data = yf.Ticker(f"{code}KZT=X").history(period="5d", timeout=8)
+    if data.empty:
+        raise ValueError("No exchange rate")
+    rate = Decimal(str(data['Close'].iloc[-1]))
+    if not rate.is_finite() or rate <= 0:
+        raise ValueError("Invalid exchange rate")
+    return rate
+
+async def get_exchange_rate(code):
+    if code == 'KZT':
+        return Decimal(1)
+    async with _lock:
+        cached = _cache.get(code)
+        if cached and time.monotonic() - cached[0] < 3600:
+            return cached[1]
+        rate = await asyncio.wait_for(asyncio.to_thread(_fetch, code), timeout=12)
+        _cache[code] = (time.monotonic(), rate)
+        return rate
